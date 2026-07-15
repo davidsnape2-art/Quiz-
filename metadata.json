@@ -1,0 +1,6 @@
+{
+  "name": "Quiz Generator & Player",
+  "description": "An educational Quiz Generation and Playing Engine powered by Gemini 3.5. Create, customize, and play detailed quizzes across any subject area with comprehensive explanations and hints.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
