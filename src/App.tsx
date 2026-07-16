@@ -161,7 +161,10 @@ export default function App() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server returned error status ${response.status}`);
+        const message = errorData.details 
+          ? `${errorData.error}: ${errorData.details}` 
+          : (errorData.error || `Server returned error status ${response.status}`);
+        throw new Error(message);
       }
 
       const data: Quiz = await response.json();
@@ -180,6 +183,13 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle Quiz Import
+  const handleImportQuiz = (quiz: Quiz) => {
+    setActiveQuiz(quiz);
+    setActiveAnswers({});
+    setGameState("playing");
   };
 
   // Handle Quiz Submission / Completion
@@ -396,6 +406,7 @@ export default function App() {
           activeTab === "setup" ? (
             <QuizSetup
               onGenerate={handleGenerateQuiz}
+              onImportQuiz={handleImportQuiz}
               isLoading={isLoading}
               loadingMessage={loadingMessage}
             />

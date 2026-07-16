@@ -1,12 +1,16 @@
 export interface Question {
   questionNumber: number;
   questionText: string;
-  questionType: 'MultipleChoice' | 'TrueFalse';
+  questionType: 'MultipleChoice' | 'TrueFalse' | 'MatchingPairs';
   options: string[];
   correctAnswer: string;
   difficultyRating: number;
   hint: string;
   detailedExplanation: string;
+  matchingPairsData?: {
+    leftSide: string[];
+    rightSide: string[];
+  };
 }
 
 export interface Quiz {

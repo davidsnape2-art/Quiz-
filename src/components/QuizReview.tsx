@@ -255,45 +255,112 @@ export default function QuizReview({
                 {q.questionText}
               </p>
 
-              {/* Options list static render */}
-              <div className="grid grid-cols-1 gap-2.5 pl-2">
-                {q.options.map((option, oIdx) => {
-                  const isCorrectOpt = option === q.correctAnswer;
-                  const isUserSelectedOpt = option === userAnswer;
+              {/* Options list static render or Matching list review */}
+              {q.questionType === "MatchingPairs" ? (
+                <div className="space-y-3 pl-2">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Your Alignments & Verified Pairs</div>
+                  {q.matchingPairsData?.leftSide.map((leftItem, idx) => {
+                    const correctRightItem = q.matchingPairsData?.rightSide[idx] || "";
+                    
+                    // Parse user's selected match for this left item
+                    let userRightItem = "";
+                    if (userAnswer) {
+                      const parts = userAnswer.split(" | ");
+                      const partForLeft = parts.find(p => p.startsWith(`${leftItem} ➔`));
+                      if (partForLeft) {
+                        userRightItem = partForLeft.replace(`${leftItem} ➔ `, "");
+                      }
+                    }
 
-                  let optStyle = "border-slate-100 bg-slate-50 text-slate-600";
-                  let badge = null;
+                    const isPairCorrect = userRightItem === correctRightItem;
 
-                  if (isCorrectOpt) {
-                    optStyle = "border-emerald-200 bg-emerald-50 text-emerald-900 font-bold";
-                    badge = <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />;
-                  } else if (isUserSelectedOpt) {
-                    optStyle = "border-rose-200 bg-rose-50 text-rose-900 font-bold";
-                    badge = <XCircle className="w-4 h-4 text-rose-600 shrink-0" />;
-                  }
+                    return (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm font-medium ${
+                          isPairCorrect
+                            ? "border-emerald-100 bg-emerald-50/50 text-emerald-950"
+                            : "border-rose-100 bg-rose-50/50 text-rose-950"
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${
+                              isPairCorrect ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-slate-900">{leftItem}</span>
+                          </div>
+                          
+                          <div className="pl-7 text-xs text-slate-600">
+                            Correct Match: <span className="font-semibold text-emerald-800">{correctRightItem}</span>
+                          </div>
 
-                  return (
-                    <div
-                      key={oIdx}
-                      className={`px-4 py-3 rounded-2xl border text-sm md:text-base flex items-center justify-between gap-3 ${optStyle}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-extrabold ${
-                          isCorrectOpt 
-                            ? "bg-emerald-600 text-white" 
-                            : isUserSelectedOpt 
-                              ? "bg-rose-600 text-white" 
-                              : "bg-slate-200 text-slate-500"
-                        }`}>
-                          {String.fromCharCode(65 + oIdx)}
-                        </span>
-                        <span>{option}</span>
+                          {!isPairCorrect && (
+                            <div className="pl-7 text-xs text-rose-600 font-semibold">
+                              Your Selection: <span className="line-through">{userRightItem || "(No Match)"}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="shrink-0 flex items-center self-end sm:self-center gap-1.5 text-xs font-bold uppercase">
+                          {isPairCorrect ? (
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span>Verified</span>
+                            </span>
+                          ) : (
+                            <span className="text-rose-700 flex items-center gap-1">
+                              <XCircle className="w-4 h-4 text-rose-600" />
+                              <span>Misaligned</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {badge}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2.5 pl-2">
+                  {q.options.map((option, oIdx) => {
+                    const isCorrectOpt = option === q.correctAnswer;
+                    const isUserSelectedOpt = option === userAnswer;
+
+                    let optStyle = "border-slate-100 bg-slate-50 text-slate-600";
+                    let badge = null;
+
+                    if (isCorrectOpt) {
+                      optStyle = "border-emerald-200 bg-emerald-50 text-emerald-900 font-bold";
+                      badge = <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />;
+                    } else if (isUserSelectedOpt) {
+                      optStyle = "border-rose-200 bg-rose-50 text-rose-900 font-bold";
+                      badge = <XCircle className="w-4 h-4 text-rose-600 shrink-0" />;
+                    }
+
+                    return (
+                      <div
+                        key={oIdx}
+                        className={`px-4 py-3 rounded-2xl border text-sm md:text-base flex items-center justify-between gap-3 ${optStyle}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-extrabold ${
+                            isCorrectOpt 
+                              ? "bg-emerald-600 text-white" 
+                              : isUserSelectedOpt 
+                                ? "bg-rose-600 text-white" 
+                                : "bg-slate-200 text-slate-500"
+                          }`}>
+                            {String.fromCharCode(65 + oIdx)}
+                          </span>
+                          <span>{option}</span>
+                        </div>
+                        {badge}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Explanation section */}
               <div className="p-5 bg-indigo-50/45 border border-indigo-100/50 rounded-2xl space-y-2 pl-5">

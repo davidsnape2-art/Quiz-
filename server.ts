@@ -155,7 +155,15 @@ app.post("/api/quiz/generate", async (req, res) => {
       throw new Error("Empty response from Gemini API");
     }
 
-    const quizData = JSON.parse(resultText.trim());
+    let cleanedText = resultText.trim();
+    // Clean markdown code blocks if the model wrapped the response
+    if (cleanedText.startsWith("```")) {
+      cleanedText = cleanedText.replace(/^```(?:json)?\n?/i, "");
+      cleanedText = cleanedText.replace(/\n?```$/, "");
+      cleanedText = cleanedText.trim();
+    }
+
+    const quizData = JSON.parse(cleanedText);
     return res.json(quizData);
   } catch (error: any) {
     console.error("Error generating quiz:", error);

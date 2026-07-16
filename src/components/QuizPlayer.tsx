@@ -15,12 +15,40 @@ export default function QuizPlayer({ quiz, onSubmit, onCancel }: QuizPlayerProps
   const [showHint, setShowHint] = useState(false);
   const [feedbackMode, setFeedbackMode] = useState<'instant' | 'exam'>("instant");
 
+  // Matching game local states
+  const [matchingSelections, setMatchingSelections] = useState<{ [leftIdx: number]: number }>({});
+  const [activeLeftIdx, setActiveLeftIdx] = useState<number | null>(null);
+
   // Timer states
   const [timeLeft, setTimeLeft] = useState(60);
   const [questionTimeouts, setQuestionTimeouts] = useState<{ [key: number]: boolean }>({});
   const [questionTimeRemaining, setQuestionTimeRemaining] = useState<{ [key: number]: number }>({});
 
   const question: Question = quiz.questions[currentIdx];
+
+  // Synchronize matching selections on question index change
+  useEffect(() => {
+    const qNum = question.questionNumber;
+    const answeredString = selectedAnswers[qNum];
+    if (answeredString && question.questionType === "MatchingPairs") {
+      const leftSide = question.matchingPairsData?.leftSide || [];
+      const rightSide = question.matchingPairsData?.rightSide || [];
+      const selections: { [leftIdx: number]: number } = {};
+      const parts = answeredString.split(" | ");
+      parts.forEach((part) => {
+        const [lText, rText] = part.split(" ➔ ");
+        const lIdx = leftSide.indexOf(lText);
+        const rIdx = rightSide.indexOf(rText);
+        if (lIdx !== -1 && rIdx !== -1) {
+          selections[lIdx] = rIdx;
+        }
+      });
+      setMatchingSelections(selections);
+    } else {
+      setMatchingSelections({});
+    }
+    setActiveLeftIdx(null);
+  }, [currentIdx, question]);
   const isLastQuestion = currentIdx === quiz.questions.length - 1;
   const totalQuestions = quiz.questions.length;
   const progressPercent = Math.round(((currentIdx + 1) / totalQuestions) * 100);
@@ -104,6 +132,78 @@ export default function QuizPlayer({ quiz, onSubmit, onCancel }: QuizPlayerProps
         [qNum]: true,
       }));
     }
+  };
+
+  // Handles selecting a left-side item in MatchingPairs
+  const handleLeftClick = (leftIdx: number) => {
+    const qNum = question.questionNumber;
+    if (feedbackMode === "instant" && instantFeedbackAnswers[qNum]) {
+      return; // already locked in in Study Mode
+    }
+    if (questionTimeouts[qNum]) {
+      return; // already timed out
+    }
+    setActiveLeftIdx(leftIdx);
+  };
+
+  // Handles selecting a right-side item in MatchingPairs
+  const handleRightClick = (rightIdx: number) => {
+    const qNum = question.questionNumber;
+    if (feedbackMode === "instant" && instantFeedbackAnswers[qNum]) {
+      return; // already locked in in Study Mode
+    }
+    if (questionTimeouts[qNum] || activeLeftIdx === null) {
+      return; // already timed out or no active left item
+    }
+
+    const newSelections = {
+      ...matchingSelections,
+      [activeLeftIdx]: rightIdx,
+    };
+    setMatchingSelections(newSelections);
+    setActiveLeftIdx(null);
+
+    // Check if all left side items have been matched
+    const totalLeft = question.matchingPairsData?.leftSide.length || 0;
+    if (Object.keys(newSelections).length === totalLeft) {
+      const leftSide = question.matchingPairsData?.leftSide || [];
+      const rightSide = question.matchingPairsData?.rightSide || [];
+      const ansString = leftSide
+        .map((item, idx) => `${item} ➔ ${rightSide[newSelections[idx]] || ""}`)
+        .join(" | ");
+
+      setSelectedAnswers((prev) => ({
+        ...prev,
+        [qNum]: ansString,
+      }));
+
+      setQuestionTimeRemaining((prev) => ({
+        ...prev,
+        [qNum]: timeLeft,
+      }));
+
+      if (feedbackMode === "instant") {
+        setInstantFeedbackAnswers((prev) => ({
+          ...prev,
+          [qNum]: true,
+        }));
+      }
+    }
+  };
+
+  // Handles clearing matching map
+  const handleClearMatches = () => {
+    const qNum = question.questionNumber;
+    if (feedbackMode === "instant" && instantFeedbackAnswers[qNum]) {
+      return;
+    }
+    setMatchingSelections({});
+    setActiveLeftIdx(null);
+    setSelectedAnswers((prev) => {
+      const copy = { ...prev };
+      delete copy[qNum];
+      return copy;
+    });
   };
 
   const handleNext = () => {
@@ -245,63 +345,184 @@ export default function QuizPlayer({ quiz, onSubmit, onCancel }: QuizPlayerProps
             </h2>
           </div>
 
-          {/* C. The Custom Option Buttons Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4" id="options-container">
-            {question.options.map((option, idx) => {
-              const isSelected = selectedOptionForCurrent === option;
-              const isCorrect = option === question.correctAnswer;
-              const isAnswered = selectedOptionForCurrent !== undefined;
-              const isTimedOut = questionTimeouts[question.questionNumber] === true;
+          {/* C. The Custom Option Buttons Grid or Matching game */}
+          {question.questionType === "MatchingPairs" ? (
+            <div className="space-y-6 animate-fadeIn" id="matching-container">
+              {/* Reset matching selections button */}
+              {selectedOptionForCurrent === undefined && !questionTimeouts[question.questionNumber] && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleClearMatches}
+                    className="text-xs font-bold text-rose-600 bg-white hover:bg-rose-50 border border-rose-100 px-3.5 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer hover:shadow-sm"
+                  >
+                    Clear Selections
+                  </button>
+                </div>
+              )}
 
-              let btnStyle = "bg-white border-2 border-transparent text-slate-700 hover:border-indigo-400 hover:bg-indigo-50/20";
-              let badgeStyle = "bg-indigo-100 text-indigo-600";
-              let iconElement = null;
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column (Items to match) */}
+                <div className="space-y-3">
+                  <span className="block text-xs font-bold uppercase text-white/70 tracking-wider mb-2">Item / Concept</span>
+                  {question.matchingPairsData?.leftSide.map((item, idx) => {
+                    const isMatched = matchingSelections[idx] !== undefined;
+                    const rightMatchIdx = matchingSelections[idx];
+                    const isSelected = activeLeftIdx === idx;
+                    const isAnswered = selectedOptionForCurrent !== undefined;
+                    const isTimedOut = questionTimeouts[question.questionNumber] === true;
 
-              if (feedbackMode === "instant") {
-                if (isQuestionAnsweredInstant) {
-                  if (isCorrect) {
-                    btnStyle = "bg-emerald-50 border-2 border-emerald-500 text-emerald-900 font-bold";
-                    badgeStyle = "bg-emerald-600 text-white";
-                    iconElement = <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />;
-                  } else if (isSelected) {
-                    btnStyle = "bg-rose-50 border-2 border-rose-500 text-rose-900 font-bold";
-                    badgeStyle = "bg-rose-600 text-white";
-                    iconElement = <XCircle className="w-5 h-5 text-rose-600 shrink-0" />;
-                  } else {
+                    let leftStyle = "bg-white border-slate-200 text-slate-700 hover:border-indigo-400 hover:bg-indigo-50/20";
+                    let matchedText = "";
+
+                    if (isSelected) {
+                      leftStyle = "bg-indigo-50 border-indigo-600 text-indigo-900 font-bold ring-2 ring-indigo-500/15";
+                    } else if (isAnswered || isTimedOut) {
+                      if (feedbackMode === "instant") {
+                        const isCorrectPair = rightMatchIdx === idx;
+                        if (isCorrectPair) {
+                          leftStyle = "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold";
+                        } else {
+                          leftStyle = "bg-rose-50 border-rose-500 text-rose-900 font-bold";
+                        }
+                      } else {
+                        leftStyle = "bg-indigo-100/30 border-indigo-200 text-indigo-950 font-bold";
+                      }
+                    } else if (isMatched) {
+                      leftStyle = "bg-emerald-50/40 border-emerald-100 text-slate-800 font-medium";
+                    }
+
+                    if (isMatched && question.matchingPairsData?.rightSide[rightMatchIdx]) {
+                      matchedText = ` ➔ ${question.matchingPairsData.rightSide[rightMatchIdx]}`;
+                    }
+
+                    return (
+                      <button
+                        key={`left-${idx}`}
+                        type="button"
+                        onClick={() => handleLeftClick(idx)}
+                        disabled={isAnswered || isTimedOut}
+                        className={`w-full text-left rounded-2xl p-4 border transition-all card-shadow flex items-center justify-between gap-3 text-sm font-semibold cursor-pointer ${leftStyle}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="leading-relaxed">
+                            {item}
+                            {matchedText && (
+                              <span className="text-indigo-600 font-bold block sm:inline mt-1 sm:mt-0 sm:ml-1 text-xs uppercase bg-indigo-50/80 px-2 py-0.5 rounded-md border border-indigo-100">
+                                {matchedText}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right Column (Options to pick from) */}
+                <div className="space-y-3">
+                  <span className="block text-xs font-bold uppercase text-white/70 tracking-wider mb-2">Match Definition</span>
+                  {question.matchingPairsData?.rightSide.map((desc, idx) => {
+                    const isSelectedAsMatch = Object.values(matchingSelections).includes(idx);
+                    const isAnswered = selectedOptionForCurrent !== undefined;
+                    const isTimedOut = questionTimeouts[question.questionNumber] === true;
+                    const isTargetActive = activeLeftIdx !== null;
+
+                    let rightStyle = "bg-white border-slate-200 text-slate-700";
+
+                    if (isAnswered || isTimedOut) {
+                      rightStyle = "bg-slate-50 text-slate-400 opacity-60 border-slate-100 cursor-not-allowed";
+                    } else if (isSelectedAsMatch) {
+                      rightStyle = "bg-slate-100 border-dashed border-slate-300 text-slate-400 cursor-not-allowed";
+                    } else if (isTargetActive) {
+                      rightStyle = "bg-white border-dashed border-indigo-300 text-slate-700 hover:border-indigo-600 hover:bg-indigo-50/10 hover:shadow-md hover:scale-[1.01] cursor-pointer";
+                    } else {
+                      rightStyle = "bg-white text-slate-500 border-slate-150 cursor-not-allowed opacity-80";
+                    }
+
+                    return (
+                      <button
+                        key={`right-${idx}`}
+                        type="button"
+                        onClick={() => handleRightClick(idx)}
+                        disabled={isAnswered || isTimedOut || isSelectedAsMatch || !isTargetActive}
+                        className={`w-full text-left rounded-2xl p-4 border transition-all text-xs sm:text-sm font-medium ${rightStyle}`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className={`w-6 h-6 rounded-md flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
+                            isSelectedAsMatch ? "bg-slate-200 text-slate-400" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {String.fromCharCode(65 + idx)}
+                          </span>
+                          <span className="leading-relaxed">{desc}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" id="options-container">
+              {question.options.map((option, idx) => {
+                const isSelected = selectedOptionForCurrent === option;
+                const isCorrect = option === question.correctAnswer;
+                const isAnswered = selectedOptionForCurrent !== undefined;
+                const isTimedOut = questionTimeouts[question.questionNumber] === true;
+
+                let btnStyle = "bg-white border-2 border-transparent text-slate-700 hover:border-indigo-400 hover:bg-indigo-50/20";
+                let badgeStyle = "bg-indigo-100 text-indigo-600";
+                let iconElement = null;
+
+                if (feedbackMode === "instant") {
+                  if (isQuestionAnsweredInstant) {
+                    if (isCorrect) {
+                      btnStyle = "bg-emerald-50 border-2 border-emerald-500 text-emerald-900 font-bold";
+                      badgeStyle = "bg-emerald-600 text-white";
+                      iconElement = <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />;
+                    } else if (isSelected) {
+                      btnStyle = "bg-rose-50 border-2 border-rose-500 text-rose-900 font-bold";
+                      badgeStyle = "bg-rose-600 text-white";
+                      iconElement = <XCircle className="w-5 h-5 text-rose-600 shrink-0" />;
+                    } else {
+                      btnStyle = "bg-slate-50/50 border-2 border-transparent text-slate-400 opacity-60";
+                      badgeStyle = "bg-slate-100 text-slate-400";
+                    }
+                  }
+                } else {
+                  // Classic Exam Mode selection style
+                  if (isSelected) {
+                    btnStyle = "bg-indigo-50 border-2 border-indigo-600 text-indigo-950 font-bold ring-2 ring-indigo-500/15";
+                    badgeStyle = "bg-indigo-600 text-white";
+                  } else if (isAnswered || isTimedOut) {
                     btnStyle = "bg-slate-50/50 border-2 border-transparent text-slate-400 opacity-60";
                     badgeStyle = "bg-slate-100 text-slate-400";
                   }
                 }
-              } else {
-                // Classic Exam Mode selection style
-                if (isSelected) {
-                  btnStyle = "bg-indigo-50 border-2 border-indigo-600 text-indigo-950 font-bold ring-2 ring-indigo-500/15";
-                  badgeStyle = "bg-indigo-600 text-white";
-                } else if (isAnswered || isTimedOut) {
-                  btnStyle = "bg-slate-50/50 border-2 border-transparent text-slate-400 opacity-60";
-                  badgeStyle = "bg-slate-100 text-slate-400";
-                }
-              }
 
-              return (
-                <button
-                  key={`${currentIdx}-${idx}`}
-                  type="button"
-                  onClick={() => handleOptionClick(option)}
-                  disabled={isAnswered || isTimedOut}
-                  className={`option-btn rounded-2xl p-5 text-left flex items-center justify-between gap-4 card-shadow group cursor-pointer ${btnStyle}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold tracking-wider transition-all group-hover:bg-indigo-600 group-hover:text-white shrink-0 ${badgeStyle}`}>
-                      {String.fromCharCode(65 + idx)}
+                return (
+                  <button
+                    key={`${currentIdx}-${idx}`}
+                    type="button"
+                    onClick={() => handleOptionClick(option)}
+                    disabled={isAnswered || isTimedOut}
+                    className={`option-btn rounded-2xl p-5 text-left flex items-center justify-between gap-4 card-shadow group cursor-pointer ${btnStyle}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold tracking-wider transition-all group-hover:bg-indigo-600 group-hover:text-white shrink-0 ${badgeStyle}`}>
+                        {String.fromCharCode(65 + idx)}
+                      </div>
+                      <span className="text-base font-medium transition-colors">{option}</span>
                     </div>
-                    <span className="text-base font-medium transition-colors">{option}</span>
-                  </div>
-                  {iconElement}
-                </button>
-              );
-            })}
-          </div>
+                    {iconElement}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Micro Learning Pedagogical Breakdown */}
           {isQuestionAnsweredInstant && (
